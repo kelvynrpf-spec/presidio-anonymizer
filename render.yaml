@@ -1,7 +1,9 @@
 services:
   - type: web
     name: presidio-anonymizer
-    env: python
+    runtime: python
+    region: oregon
+    plan: free
     buildCommand: pip install -r requirements.txt && python -m spacy download pt_core_news_sm
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
     envVars:
