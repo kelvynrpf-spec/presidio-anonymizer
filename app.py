@@ -1,148 +1,74 @@
 from flask import Flask, request, jsonify
-from presidio_analyzer import AnalyzerEngine, PatternRecognizer, Pattern
-from presidio_anonymizer import AnonymizerEngine
-from presidio_analyzer.nlp_engine import NlpEngineProvider
-import logging
+import re
 import os
+import logging
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# ⚡ CONFIGURAÇÃO LEVE - Apenas português
-nlp_config = {
-    "nlp_engine_name": "spacy",
-    "models": [
-        {
-            "lang_code": "pt",
-            "model_name": "pt_core_news_sm"  # Modelo pequeno (13MB)
-        }
-    ]
+# Padrões brasileiros para anonimização
+PATTERNS = {
+    'CPF': r'\d{3}\.?\d{3}\.?\d{3}-?\d{2}',
+    'RG': r'\d{1,2}\.?\d{3}\.?\d{3}-?[\dxX]?',
+    'TELEFONE': r'\(?\d{2}\)?\s?\d{4,5}-?\d{4}',
+    'CEP': r'\d{5}-?\d{3}',
+    'EMAIL': r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
+    'DATA': r'\d{2}[\/\-]\d{2}[\/\-]\d{4}',
+    'PLACA': r'[A-Z]{3}[-\s]?\d{4}',
 }
-
-# Criar NLP Engine apenas com português
-provider = NlpEngineProvider(nlp_configuration=nlp_config)
-nlp_engine = provider.create_engine()
-
-# Inicializar Presidio com configuração leve
-analyzer = AnalyzerEngine(nlp_engine=nlp_engine)
-anonymizer = AnonymizerEngine()
-
-# Adicionar reconhecedores brasileiros
-cpf_recognizer = PatternRecognizer(
-    supported_entity="BR_CPF",
-    patterns=[Pattern(name="cpf", regex=r"\d{3}\.?\d{3}\.?\d{3}-?\d{2}", score=0.95)],
-    context=["cpf", "CPF", "documento"]
-)
-
-rg_recognizer = PatternRecognizer(
-    supported_entity="BR_RG",
-    patterns=[Pattern(name="rg", regex=r"\d{1,2}\.?\d{3}\.?\d{3}-?[\dxX]?", score=0.85)],
-    context=["rg", "RG", "identidade"]
-)
-
-phone_recognizer = PatternRecognizer(
-    supported_entity="BR_PHONE",
-    patterns=[Pattern(name="phone", regex=r"\(?\d{2}\)?\s?\d{4,5}-?\d{4}", score=0.9)],
-    context=["telefone", "celular", "tel", "whatsapp"]
-)
-
-cep_recognizer = PatternRecognizer(
-    supported_entity="BR_CEP",
-    patterns=[Pattern(name="cep", regex=r"\d{5}-?\d{3}", score=0.85)],
-    context=["cep", "CEP", "endereço"]
-)
-
-analyzer.registry.add_recognizer(cpf_recognizer)
-analyzer.registry.add_recognizer(rg_recognizer)
-analyzer.registry.add_recognizer(phone_recognizer)
-analyzer.registry.add_recognizer(cep_recognizer)
-
-# Apenas entidades que funcionam com modelo português
-ENTITIES = [
-    "PERSON",        # Nomes (funciona com pt_core_news_sm)
-    "LOCATION",      # Locais
-    "DATE_TIME",     # Datas
-    "BR_CPF",        # CPF
-    "BR_RG",         # RG
-    "BR_PHONE",      # Telefone
-    "BR_CEP",        # CEP
-]
 
 @app.route('/')
 def home():
     return jsonify({
-        "service": "Presidio Anonymizer API",
         "status": "online",
-        "memory": "otimizado para 512MB",
-        "endpoints": ["/health", "/anonymize", "/deanonymize"]
+        "service": "Anonymizer API",
+        "version": "1.0.0"
     })
 
 @app.route('/health')
 def health():
-    return jsonify({"status": "online", "uptime": "24/7"})
+    return jsonify({"status": "healthy"})
 
 @app.route('/anonymize', methods=['POST'])
 def anonymize():
     try:
         data = request.get_json()
+        text = data.get('text', '')
         
-        if not data or 'text' not in data:
-            return jsonify({"success": False, "error": "Campo 'text' é obrigatório"}), 400
-        
-        text = data['text']
-        app.logger.info(f"Analisando texto ({len(text)} caracteres)")
-        
-        # Analisar com Presidio
-        results = analyzer.analyze(
-            text=text,
-            entities=ENTITIES,
-            language='pt'
-        )
+        if not text:
+            return jsonify({"success": False, "error": "Texto vazio"}), 400
         
         mapping = {}
         counters = {}
+        anonymized = text
         
-        # Ordenar do final para início
-        results_sorted = sorted(results, key=lambda x: x.start, reverse=True)
-        anonymized_text = text
+        # Aplicar cada padrão
+        for entity_type, pattern in PATTERNS.items():
+            def replace_match(match, etype=entity_type):
+                nonlocal counters, mapping
+                original = match.group(0)
+                
+                if etype not in counters:
+                    counters[etype] = 1
+                else:
+                    counters[etype] += 1
+                
+                placeholder = f"[{etype}_{counters[etype]}]"
+                mapping[placeholder] = original
+                return placeholder
+            
+            anonymized = re.sub(pattern, replace_match, anonymized, flags=re.IGNORECASE)
         
-        for result in results_sorted:
-            entity_type = result.entity_type
-            original_value = text[result.start:result.end]
-            
-            if entity_type not in counters:
-                counters[entity_type] = 1
-            else:
-                counters[entity_type] += 1
-            
-            type_names = {
-                "PERSON": "NOME",
-                "BR_CPF": "CPF",
-                "BR_RG": "RG",
-                "BR_PHONE": "TELEFONE",
-                "BR_CEP": "CEP",
-                "LOCATION": "LOCAL",
-                "DATE_TIME": "DATA",
-            }
-            
-            type_name = type_names.get(entity_type, "DADO")
-            placeholder = f"[{type_name}_{counters[entity_type]}]"
-            
-            anonymized_text = anonymized_text[:result.start] + placeholder + anonymized_text[result.end:]
-            mapping[placeholder] = original_value
-        
-        app.logger.info(f"✅ {len(results)} entidades anonimizadas")
+        app.logger.info(f"✅ {len(mapping)} dados anonimizados")
         
         return jsonify({
             "success": True,
-            "anonymized_text": anonymized_text,
+            "anonymized_text": anonymized,
             "mapping": mapping,
-            "count": len(results),
-            "entities_found": counters
+            "count": len(mapping)
         })
         
     except Exception as e:
-        app.logger.error(f"Erro: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/deanonymize', methods=['POST'])
@@ -152,25 +78,13 @@ def deanonymize():
         text = data.get('text', '')
         mapping = data.get('mapping', {})
         
-        # Reverter placeholders (do maior para o menor)
-        for placeholder in sorted(mapping.keys(), key=len, reverse=True):
-            text = text.replace(placeholder, mapping[placeholder])
+        for placeholder, original in mapping.items():
+            text = text.replace(placeholder, original)
         
         return jsonify({"success": True, "original_text": text})
         
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
-
-# 🚀 Inicialização do modelo (carregar na memória)
-@app.before_first_request
-def load_model():
-    """Pré-carrega o modelo português para evitar timeout"""
-    try:
-        import spacy
-        nlp = spacy.load("pt_core_news_sm")
-        app.logger.info("✅ Modelo português carregado com sucesso!")
-    except Exception as e:
-        app.logger.error(f"Erro ao carregar modelo: {e}")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
