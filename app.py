@@ -8,12 +8,15 @@ logging.basicConfig(level=logging.INFO)
 
 # Padrões brasileiros para anonimização
 PATTERNS = {
-    'CPF': r'\d{3}\.?\d{3}\.?\d{3}-?\d{2}',
+ 'CPF': r'\d{3}\.?\d{3}\.?\d{3}-?\d{2}',
     'RG': r'\d{1,2}\.?\d{3}\.?\d{3}-?[\dxX]?',
     'TELEFONE': r'\(?\d{2}\)?\s?\d{4,5}-?\d{4}',
     'CEP': r'\d{5}-?\d{3}',
     'EMAIL': r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
+    'CNPJ': r'\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}',
     'PLACA': r'[A-Z]{3}[-\s]?\d{4}',
+    'AGENCIA': r'agência\s*\d{1,4}-?\d{0,1}',
+    'CONTA': r'conta\s*(corrente|poupança)?\s*\d{4,8}-?\d{0,2}',
 }
 
 # Lista de nomes e sobrenomes comuns brasileiros
