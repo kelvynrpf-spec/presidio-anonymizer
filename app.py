@@ -6,104 +6,84 @@ import logging
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# Padrões brasileiros para anonimização
-PATTERNS = {
-    'CPF': r'\d{3}\.?\d{3}\.?\d{3}-?\d{2}',
-    'RG': r'\d{1,2}\.?\d{3}\.?\d{3}-?[\dxX]?',
-    'TELEFONE': r'\(?\d{2}\)?\s?\d{4,5}-?\d{4}',
-    'CEP': r'\d{5}-?\d{3}',
-    'EMAIL': r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
-    'CNPJ': r'\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}',
-    'PLACA': r'[A-Z]{3}[-\s]?\d{4}',
-    
-    # Bloco bancário completo
-    'DADOS_BANCARIOS': r'(Bradesco|Itaú|Santander|Banco do Brasil|Caixa|Nubank|Inter|C6|Original|Next|Neon|PicPay|Mercado Pago)\s*,?\s*agência\s*\d{1,4}-?\d{0,1}\s*,?\s*conta\s*(corrente|poupança)?\s*\d{4,8}-?\d{0,2}',
-}
-
-# Lista de nomes e sobrenomes comuns brasileiros
-NOMES_COMUNS = [
+NOMES_COMUNS = set([
     'kelvyn', 'renan', 'barboza', 'alves',
     'joão', 'maria', 'josé', 'ana', 'carlos', 'paulo', 'pedro', 'lucas',
-    'marcos', 'antônio', 'francisco', 'luiz', 'fernando', 'roberto', 'ricardo',
-    'eduardo', 'marcelo', 'andré', 'rafael', 'felipe', 'bruno', 'rodrigo',
-    'gustavo', 'daniel', 'leonardo', 'thiago', 'fabio', 'diego', 'alexandre',
-    'renato', 'sandra', 'patricia', 'camila', 'juliana', 'amanda', 'beatriz',
-    'carla', 'vanessa', 'mariana', 'larissa', 'isabela', 'fernanda', 'raquel',
-    'adriana', 'alessandra', 'alice', 'aline', 'ana clara', 'ana julia',
-    'ana luiza', 'ana paula', 'anderson', 'andréia', 'angela', 'antonia',
-    'augusto', 'bárbara', 'bianca', 'brenda', 'caio', 'caroline', 'catarina',
-    'cecilia', 'celso', 'cesar', 'clara', 'claudia', 'claudio', 'cristiane',
-    'cristina', 'daiane', 'dalva', 'daniela', 'danilo', 'davi', 'denise',
-    'douglas', 'edson', 'elaine', 'elias', 'elisangela', 'emanuel', 'emanuelle',
-    'emerson', 'enrico', 'erica', 'erika', 'esther', 'evelyn', 'fabiana',
-    'fabricio', 'fátima', 'flavia', 'francieli', 'gabriel', 'gabriela',
-    'gilberto', 'giovana', 'giovanna', 'gisela', 'guilherme', 'helena',
-    'heloisa', 'henrique', 'igor', 'ingrid', 'isabel', 'isabella', 'isadora',
-    'italo', 'ivan', 'ivone', 'jacqueline', 'jéssica', 'joana', 'jorge',
-    'julia', 'julio', 'karen', 'kelly', 'laura', 'leandro', 'leticia',
-    'lilian', 'lorena', 'luana', 'luciana', 'luciano', 'luis', 'luisa',
-    'maicon', 'marcelo', 'marcia', 'marcio', 'marcos', 'margarida',
-    'marina', 'mario', 'marta', 'mateus', 'mauricio', 'michele', 'miguel',
-    'mirela', 'monica', 'murilo', 'natália', 'nathalia', 'nelson', 'nicolas',
-    'odair', 'orlando', 'osvaldo', 'otavio', 'pamela', 'patricia', 'paula',
-    'priscila', 'rafaela', 'regina', 'renata', 'rogerio', 'romulo', 'ronaldo',
-    'rosana', 'rose', 'rosemary', 'sabrina', 'samuel', 'sara', 'sergio',
-    'sheila', 'silvana', 'simone', 'sonia', 'stefany', 'susana', 'tainara',
-    'tamires', 'tatiane', 'teresa', 'thais', 'tiago', 'valeria', 'vanderlei',
-    'vera', 'vicente', 'victor', 'vinicius', 'vivian', 'wagner', 'wesley',
-    'william', 'wilson', 'yago', 'yuri',
-    # Sobrenomes
+    'marcos', 'antônio', 'antonio', 'francisco', 'luiz', 'luis', 'fernando',
+    'roberto', 'ricardo', 'eduardo', 'marcelo', 'andré', 'andre', 'rafael',
+    'felipe', 'bruno', 'rodrigo', 'gustavo', 'daniel', 'leonardo', 'thiago',
+    'tiago', 'fabio', 'fábio', 'diego', 'alexandre', 'renato', 'sandra',
+    'patricia', 'patrícia', 'camila', 'juliana', 'amanda', 'beatriz', 'carla',
+    'vanessa', 'mariana', 'larissa', 'isabela', 'fernanda', 'raquel',
     'silva', 'santos', 'oliveira', 'souza', 'pereira', 'lima', 'costa',
     'ferreira', 'rodrigues', 'almeida', 'nascimento', 'araujo', 'barbosa',
     'cardoso', 'carvalho', 'castro', 'dias', 'gomes', 'martins', 'ribeiro',
     'machado', 'moraes', 'teixeira', 'cavalcanti', 'freitas', 'gonçalves',
-    'andrade', 'azevedo', 'barros', 'borges', 'campos', 'correia', 'cunha',
-    'duarte', 'fernandes', 'figueiredo', 'fonseca', 'guimarães', 'leite',
-    'lopes', 'maciel', 'marques', 'medeiros', 'mendes', 'miranda', 'monteiro',
-    'moreira', 'moura', 'neves', 'nunes', 'paiva', 'pinto', 'ramos', 'reis',
-    'rocha', 'sales', 'santiago', 'soares', 'torres', 'vieira', 'xavier',
-    'amorim', 'assunção', 'avila', 'batista', 'belo', 'branco', 'brito',
-    'coelho', 'cordeiro', 'coutinho', 'cruz', 'farias', 'galvão',
-    'garcia', 'guerra', 'leão', 'lobo', 'madeira', 'maia', 'marinho',
-    'melo', 'meneses', 'mesquita', 'morais', 'pacheco',
-    'passos', 'peixoto', 'pimenta', 'queiroz', 'rego', 'rosa',
-    'tavares', 'teles', 'trindade', 'valente', 'veiga',
-    'viana', 'vidal', 'vilela'
-]
+    'andrade', 'azevedo', 'barros', 'borges', 'campos', 'correia',
+    'cunha', 'duarte', 'fernandes', 'figueiredo', 'fonseca', 'guimarães',
+    'leite', 'lopes', 'maciel', 'marques', 'medeiros', 'mendes',
+    'miranda', 'monteiro', 'moreira', 'moura', 'neves', 'nunes', 'paiva',
+    'pinto', 'ramos', 'reis', 'rocha', 'sales', 'santiago', 'soares', 'torres',
+    'vieira', 'xavier',
+])
+
+PATTERNS = {
+    'CPF': r'\d{3}\.?\d{3}\.?\d{3}-?\d{2}',
+    'CNPJ': r'\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}',
+    'RG': r'\d{1,2}\.?\d{3}\.?\d{3}-?[\dxX]?',
+    'TELEFONE': r'\(?\d{2}\)?\s?\d{4,5}-?\d{4}',
+    'CEP': r'\d{5}-?\d{3}',
+    'EMAIL': r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
+    'PLACA': r'[A-Z]{3}[-\s]?\d{4}',
+    'DADOS_BANCARIOS': r'(Bradesco|Itaú|Santander|Banco do Brasil|Caixa|Nubank|Inter|C6|Original|Next|Neon|PicPay|Mercado Pago)\s*,?\s*agência\s*\d{1,4}-?\d{0,1}\s*,?\s*conta\s*(corrente|poupança)?\s*\d{4,8}-?\d{0,2}',
+}
 
 @app.route('/')
 def home():
-    return jsonify({
-        "status": "online",
-        "service": "Anonymizer API",
-        "version": "2.0.0"
-    })
+    return jsonify({"status": "online", "service": "Anonymizer API", "version": "3.0"})
 
 @app.route('/health')
 def health():
     return jsonify({"status": "healthy"})
 
-def detectar_nomes(texto):
-    """Detecta e retorna lista de nomes completos encontrados"""
-    palavras = texto.split()
-    nomes_encontrados = []
+def detectar_e_anonimizar_nomes(texto):
+    palavras = re.split(r'(\s+)', texto)
+    mapping = {}
     nome_atual = []
+    nome_indices = []
+    counter = 1
     
     for i, palavra in enumerate(palavras):
-        palavra_limpa = palavra.lower().strip(',.!?;:()[]{}"\'')
+        palavra_limpa = palavra.strip().lower().strip(',.!?;:()[]{}"\'')
         
-        if palavra_limpa in NOMES_COMUNS:
+        if palavra_limpa and palavra_limpa in NOMES_COMUNS:
             nome_atual.append(palavra)
+            nome_indices.append(i)
         else:
             if len(nome_atual) >= 2:
-                nomes_encontrados.append(' '.join(nome_atual))
+                nome_original = ''.join(nome_atual)
+                placeholder = f'[NOME_{counter}]'
+                mapping[placeholder] = nome_original
+                
+                for idx in sorted(nome_indices, reverse=True):
+                    palavras[idx] = ''
+                
+                palavras[nome_indices[0]] = placeholder + (' ' if len(nome_indices) > 1 else '')
+                counter += 1
+            
             nome_atual = []
+            nome_indices = []
     
-    # Verificar se sobrou nome no final
     if len(nome_atual) >= 2:
-        nomes_encontrados.append(' '.join(nome_atual))
+        nome_original = ''.join(nome_atual)
+        placeholder = f'[NOME_{counter}]'
+        mapping[placeholder] = nome_original
+        
+        for idx in sorted(nome_indices, reverse=True):
+            palavras[idx] = ''
+        palavras[nome_indices[0]] = placeholder
     
-    return nomes_encontrados
+    return ''.join(palavras), mapping
 
 @app.route('/anonymize', methods=['POST'])
 def anonymize():
@@ -114,54 +94,48 @@ def anonymize():
         if not text:
             return jsonify({"success": False, "error": "Texto vazio"}), 400
         
-        mapping = {}
-        counters = {}
-        anonymized = text
+        full_mapping = {}
+        full_counters = {}
         
-        # 1. Anonimizar nomes próprios primeiro
-        nomes = detectar_nomes(anonymized)
-        for nome in nomes:
-            if 'NOME' not in counters:
-                counters['NOME'] = 1
-            else:
-                counters['NOME'] += 1
-            
-            placeholder = f"[NOME_{counters['NOME']}]"
-            mapping[placeholder] = nome
-            
-            # Substituir nome completo (case insensitive)
-            pattern = re.compile(re.escape(nome), re.IGNORECASE)
-            anonymized = pattern.sub(placeholder, anonymized)
+        # 1. Proteger datas
+        datas = []
+        text = re.sub(r'\d{2}[\/\-]\d{2}[\/\-]\d{4}', lambda m: f'__DATA_{len(datas)}__' if not datas.append(m.group(0)) else f'__DATA_{len(datas)-1}__', text)
         
-        # 2. Aplicar padrões de documentos
+        # 2. Anonimizar nomes
+        text, nome_mapping = detectar_e_anonimizar_nomes(text)
+        full_mapping.update(nome_mapping)
+        full_counters['NOME'] = len(nome_mapping)
+        
+        # 3. Anonimizar padrões
         for entity_type, pattern in PATTERNS.items():
-            # Ignorar DATA para preservar no BO
-            if entity_type == 'DATA':
-                continue
-            
-            matches = list(re.finditer(pattern, anonymized, re.IGNORECASE))
+            matches = list(re.finditer(pattern, text, re.IGNORECASE))
             
             for match in reversed(matches):
                 original = match.group(0)
                 
-                if entity_type not in counters:
-                    counters[entity_type] = 1
+                if entity_type not in full_counters:
+                    full_counters[entity_type] = 1
                 else:
-                    counters[entity_type] += 1
+                    full_counters[entity_type] += 1
                 
-                placeholder = f"[{entity_type}_{counters[entity_type]}]"
-                mapping[placeholder] = original
+                placeholder = f'[{entity_type}_{full_counters[entity_type]}]'
+                full_mapping[placeholder] = original
                 
                 start, end = match.span()
-                anonymized = anonymized[:start] + placeholder + anonymized[end:]
+                text = text[:start] + placeholder + text[end:]
         
-        app.logger.info(f"✅ {len(mapping)} dados anonimizados (incluindo nomes)")
+        # 4. Restaurar datas
+        for i, data in enumerate(datas):
+            text = text.replace(f'__DATA_{i}__', data)
+        
+        total = len(full_mapping)
+        app.logger.info(f'✅ {total} dados anonimizados')
         
         return jsonify({
             "success": True,
-            "anonymized_text": anonymized,
-            "mapping": mapping,
-            "count": len(mapping)
+            "anonymized_text": text,
+            "mapping": full_mapping,
+            "count": total
         })
         
     except Exception as e:
@@ -174,8 +148,8 @@ def deanonymize():
         text = data.get('text', '')
         mapping = data.get('mapping', {})
         
-        for placeholder, original in mapping.items():
-            text = text.replace(placeholder, original)
+        for placeholder in sorted(mapping.keys(), key=len, reverse=True):
+            text = text.replace(placeholder, mapping[placeholder])
         
         return jsonify({"success": True, "original_text": text})
         
