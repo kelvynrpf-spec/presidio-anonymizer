@@ -35,7 +35,10 @@ PATTERNS = {
     'CEP': r'\d{5}-?\d{3}',
     'EMAIL': r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
     'PLACA': r'[A-Z]{3}[-\s]?\d{4}',
-    'DADOS_BANCARIOS': r'(Bradesco|Itaú|Santander|Banco do Brasil|Caixa|Nubank|Inter|C6|Original|Next|Neon|PicPay|Mercado Pago)\s*,?\s*agência\s*\d{1,4}-?\d{0,1}\s*,?\s*conta\s*(corrente|poupança)?\s*\d{4,8}-?\d{0,2}',
+    
+    # Apenas números bancários (mantém palavras descritivas)
+    'AGENCIA': r'(?<=agência\s)\d{1,4}-?\d{0,1}',
+    'CONTA': r'(?<=conta\s*(corrente|poupança)?\s)\d{4,8}-?\d{0,2}',
 }
 
 @app.route('/')
