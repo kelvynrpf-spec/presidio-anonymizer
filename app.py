@@ -27,6 +27,7 @@ NOMES_COMUNS = set([
     'vieira', 'xavier',
 ])
 
+# ✅ CORRIGIDO: Removidos os look-behinds com largura variável
 PATTERNS = {
     'CPF': r'\d{3}\.?\d{3}\.?\d{3}-?\d{2}',
     'CNPJ': r'\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}',
@@ -36,14 +37,14 @@ PATTERNS = {
     'EMAIL': r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
     'PLACA': r'[A-Z]{3}[-\s]?\d{4}',
     
-    # Apenas números bancários (mantém palavras descritivas)
-    'AGENCIA': r'(?<=agência\s)\d{1,4}-?\d{0,1}',
-    'CONTA': r'(?<=conta\s*(corrente|poupança)?\s)\d{4,8}-?\d{0,2}',
+    # ✅ CORRIGIDO: Sem look-behind, apenas captura o número
+    'AGENCIA': r'agência\s+(\d{1,4}-?\d?)',
+    'CONTA': r'conta\s*(corrente|poupança)?\s+(\d{4,8}-?\d{0,2})',
 }
 
 @app.route('/')
 def home():
-    return jsonify({"status": "online", "service": "Anonymizer API", "version": "3.0"})
+    return jsonify({"status": "online", "service": "Anonymizer API", "version": "3.1"})
 
 @app.route('/health')
 def health():
@@ -102,7 +103,10 @@ def anonymize():
         
         # 1. Proteger datas
         datas = []
-        text = re.sub(r'\d{2}[\/\-]\d{2}[\/\-]\d{4}', lambda m: f'__DATA_{len(datas)}__' if not datas.append(m.group(0)) else f'__DATA_{len(datas)-1}__', text)
+        def proteger_data(m):
+            datas.append(m.group(0))
+            return f'__DATA_{len(datas)-1}__'
+        text = re.sub(r'\d{2}[\/\-]\d{2}[\/\-]\d{4}', proteger_data, text)
         
         # 2. Anonimizar nomes
         text, nome_mapping = detectar_e_anonimizar_nomes(text)
@@ -116,6 +120,16 @@ def anonymize():
             for match in reversed(matches):
                 original = match.group(0)
                 
+                # ✅ CORRIGIDO: Para AGENCIA e CONTA, pegar apenas o número do grupo de captura
+                if entity_type == 'AGENCIA' and match.lastindex and match.lastindex >= 1:
+                    original = match.group(1)  # Pega só o número
+                    start, end = match.span(1)
+                elif entity_type == 'CONTA' and match.lastindex and match.lastindex >= 2:
+                    original = match.group(2)  # Pega só o número da conta
+                    start, end = match.span(2)
+                else:
+                    start, end = match.span()
+                
                 if entity_type not in full_counters:
                     full_counters[entity_type] = 1
                 else:
@@ -124,7 +138,6 @@ def anonymize():
                 placeholder = f'[{entity_type}_{full_counters[entity_type]}]'
                 full_mapping[placeholder] = original
                 
-                start, end = match.span()
                 text = text[:start] + placeholder + text[end:]
         
         # 4. Restaurar datas
@@ -142,6 +155,7 @@ def anonymize():
         })
         
     except Exception as e:
+        app.logger.error(f'❌ Erro: {str(e)}')
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/deanonymize', methods=['POST'])
